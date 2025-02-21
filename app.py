@@ -3,31 +3,38 @@ import pandas as pd
 import random
 from datetime import datetime, timedelta
 
-# Load Data
-data = "District-22-meal-log.xlsx"
+file_path = "District-22-meal-log.xlsx"
+df = pd.read_excel(file_path, dtype={"Week Number Served": str})  # Read as string to prevent formatting issues
 
-df = pd.DataFrame(data, columns=["Meal Description", "Protein Type", "Meal Category", "Location Served", "Week Number Served", "EN/FR"])
+expected_columns = ["Meal Description", "Protein Type", "Meal Category", "Location Served", "Week Number Served", "EN/FR"]
+df.columns = [col.strip() for col in df.columns]  # Remove accidental whitespace
 
-# Convert "Week Number Served" to a datetime format for filtering by time difference
-week_mapping = {
-    "Week of Dec 9": datetime(2024, 12, 9),
-    "Week of Dec 2": datetime(2024, 12, 2),
-    "Week of Nov 25": datetime(2024, 11, 25),
-    "Week of Nov 18": datetime(2024, 11, 18),
-}
-df["Week Date"] = df["Week Number Served"].map(week_mapping)
+# Check if all expected columns are present
+missing_columns = [col for col in expected_columns if col not in df.columns]
+if missing_columns:
+    st.error(f"Missing columns in Excel: {missing_columns}")
+    st.stop()
+
+# Convert "Week Number Served" into an actual datetime object
+df["Week Date"] = pd.to_datetime(df["Week Number Served"], format="%Y-%m-%d", errors="coerce")
+
+# Remove rows where Week Date could not be parsed
+df = df.dropna(subset=["Week Date"])
 
 # Streamlit UI
 st.title("Random Meal Selector")
 
 # Input filters
-meal_type = st.selectbox("Select Meal Type", ["All"] + sorted(df["Meal Category"].unique()), index=0)
-protein_type = st.selectbox("Select Protein Type", ["All"] + sorted(df["Protein Type"].unique()), index=0)
+meal_type = st.selectbox("Select Meal Type", ["All"] + sorted(df["Meal Category"].dropna().unique()), index=0)
+protein_type = st.selectbox("Select Protein Type", ["All"] + sorted(df["Protein Type"].dropna().unique()), index=0)
 time_difference = st.number_input("Minimum Weeks Since Last Served", min_value=0, step=1, value=0)
 
 # Calculate date threshold
 current_date = datetime.today()
 date_threshold = current_date - timedelta(weeks=time_difference)
+
+# Debugging: Show what date we're filtering against
+st.write(f"Filtering for meals served before: {date_threshold.strftime('%Y-%m-%d')}")
 
 # Apply filters
 filtered_df = df.copy()
@@ -36,13 +43,12 @@ if meal_type != "All":
 if protein_type != "All":
     filtered_df = filtered_df[filtered_df["Protein Type"] == protein_type]
 if time_difference > 0:
-    filtered_df = filtered_df[filtered_df["Week Date"] <= date_threshold]
+    filtered_df = filtered_df[filtered_df["Week Date"] < date_threshold]  # Fix: Ensure filtering correctly
 
 # Select a random meal
 if not filtered_df.empty:
     selected_meal = filtered_df.sample(1)
-    st.subheader("Your Random Meal:")
+    st.subheader("Meal:")
     st.write(selected_meal[["Meal Description", "Protein Type", "Meal Category", "Week Number Served"]])
 else:
     st.warning("No meals match the criteria. Try adjusting the filters.")
-
